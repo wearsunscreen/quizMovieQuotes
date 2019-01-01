@@ -50,7 +50,7 @@ type alias Model =
 
 
 propNames =
-    [ "Rank", "Year", "Actor", "Role", "Movie", "Quote", "button" ]
+    [ "Rank", "Year", "Actor", "Role", "Movie", "Quote" ]
 
 
 init : () -> ( Model, Cmd msg )
@@ -63,7 +63,6 @@ initProps =
     Dict.fromList <|
         zip propNames <|
             List.map (initQuizLine 1) (List.range 1 7)
-                ++ [ ds_button ( 10, 20 ) "HINT" Hint ]
 
 
 emptyModel : Model
@@ -149,7 +148,7 @@ growLine t propName displayString scene =
             withDefault emptyProp (get propName scene.props)
                 |> setText displayString
                 |> addStatics [ ( "font-size", "200%" ) ]
-                |> addModifier (Px "width" (timeSpan (posixToMillis t) 35000) 20 800 200)
+                |> addModifier (Dynamic "width" (timeSpan (posixToMillis t) 35000) 20 800 200)
     in
     { scene | props = insert propName prop scene.props }
 
@@ -244,16 +243,32 @@ view model =
 view_ : Model -> Html Msg
 view_ model =
     div []
-        ([ button [ onClick Hint, disabled model.hint2 ] [ text "Hint" ]
-         , button [ onClick Answer, disabled (not model.hint2 || model.answer) ] [ text "Answer" ]
-         , button [ onClick Next, disabled (not model.answer) ] [ text "Next" ]
+        ([ button
+            [ onClick Hint
+            , disabled (Debug.log "model.hint2" model.hint2)
+            , style "top" "400px"
+            , style "position" "absolute"
+            ]
+            [ text "Hint" ]
+         , button
+            [ onClick Answer
+            , disabled (not model.hint2 || model.answer)
+            , style "top" "425px"
+            , style "position" "absolute"
+            ]
+            [ text "Answer" ]
+         , button
+            [ onClick Next
+            , disabled (not model.answer)
+            , style "top" "450px"
+            , style "position" "absolute"
+            ]
+            [ text "Next" ]
          ]
             ++ viewScene model.now model.scene
         )
 
 
-{-| icky, This should be at the app level
--}
 type Msg
     = Answer
     | Hint
@@ -272,13 +287,10 @@ type alias Prop =
     }
 
 
-{-| A Modifier is the modifier of a List Modifier, either static or changing
-
-  - from a begining modifier to an end modifier over a period of time
-
+{-| A Modifier modifies a Prop. Modifiers may be static, or may change over a defined timespan
 -}
 type Modifier
-    = Px String TimeSpan Int Int Int
+    = Dynamic String TimeSpan Int Int Int
     | Static String String
 
 
@@ -417,7 +429,7 @@ timeSpan start duration =
 updateMod : Posix -> Modifier -> Modifier
 updateMod now v =
     case v of
-        Px attr ts start end current ->
+        Dynamic attr ts start end current ->
             let
                 ratio =
                     min 1.0 (toFloat (posixToMillis now - ts.start) / toFloat ts.duration)
@@ -429,7 +441,7 @@ updateMod now v =
                     toFloat end
 
                 modifier =
-                    Debug.log (px current) (Px attr ts start end (truncate (fStart + (fEnd - fStart) * ratio)))
+                    Debug.log (px current) (Dynamic attr ts start end (truncate (fStart + (fEnd - fStart) * ratio)))
             in
             modifier
 
@@ -448,14 +460,18 @@ updateScene now scene =
 
 
 viewButton : Posix -> String -> List Modifier -> Msg -> Html Msg
-viewButton now txt modifiers msg =
-    Html.button [ onClick msg, disabled False ] [ text txt ]
+viewButton now txt mods msg =
+    Html.button
+        ([ onClick msg, disabled False ]
+            ++ viewModifiers now mods
+        )
+        [ text txt ]
 
 
 viewModifier : Modifier -> Html.Attribute Msg
 viewModifier v =
     case v of
-        Px attr ts start end current ->
+        Dynamic attr ts start end current ->
             style attr <| px current
 
         Static k vv ->

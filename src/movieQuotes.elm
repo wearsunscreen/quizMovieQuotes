@@ -1,22 +1,24 @@
 module Main exposing (main)
 
+import Browser exposing (Document, document)
 import Dict exposing (Dict, fromList, get, insert, toList, union)
 import Html exposing (Html, button, div, text)
 import Html.Attributes exposing (disabled, style)
 import Html.Events exposing (..)
 import List exposing (length, map)
 import List.Extra exposing (unique, zip)
-import Maybe
+import Maybe exposing (withDefault)
 import Random exposing (Seed, initialSeed)
-import Time exposing (Posix, every)
+import String exposing (fromInt)
+import Time exposing (Posix, every, millisToPosix, posixToMillis)
 
 
-main : Program Never
+main : Program () Model Msg
 main =
-    App.program
+    Browser.document
         { init = init
-        , view = view
         , update = update
+        , view = view
         , subscriptions = subscriptions
         }
 
@@ -51,8 +53,8 @@ propNames =
     [ "Rank", "Year", "Actor", "Role", "Movie", "Quote", "button" ]
 
 
-init : ( Model, Cmd msg )
-init =
+init : () -> ( Model, Cmd msg )
+init _ =
     ( nextQuote 1 emptyModel, Cmd.none )
 
 
@@ -61,7 +63,7 @@ initProps =
     Dict.fromList <|
         zip propNames <|
             List.map (initQuizLine 1) (List.range 1 7)
-                ++ [ DuckSoup.button ( 10, 20 ) "HINT" Hint ]
+                ++ [ ds_button ( 10, 20 ) "HINT" Hint ]
 
 
 emptyModel : Model
@@ -70,7 +72,7 @@ emptyModel =
         False
         False
         False
-        0
+        (millisToPosix 0)
         (initialSeed 0)
         { props = initProps
         }
@@ -79,12 +81,12 @@ emptyModel =
 nextQuote : Int -> Model -> Model
 nextQuote idx m =
     let
-        ( rank, year, actor, role, movie, quote ) =
+        q =
             getMovieQuoteData idx
 
         s =
             if m.seed == initialSeed 0 then
-                initialSeed (truncate m.now)
+                initialSeed (posixToMillis m.now)
 
             else
                 m.seed
@@ -97,9 +99,9 @@ nextQuote idx m =
         , seed = s
         , scene =
             setTextOfProp "Title" "Guess the Movie Quote" m.scene
-                |> setTextOfProp "Rank" ("#" ++ toString rank ++ " in the AFI list of greatest movie quotes. ")
-                |> setTextOfProp "Year" ("Released in " ++ toString year)
-                |> setTextOfProp "Actor" ("spoken by " ++ actor)
+                |> setTextOfProp "Rank" ("#" ++ fromInt q.rank ++ " in the AFI list of greatest movie quotes. ")
+                |> setTextOfProp "Year" ("Released in " ++ fromInt q.year)
+                |> setTextOfProp "Actor" ("spoken by " ++ q.actor)
                 |> shrinkLine "Role" " portraying - "
                 |> shrinkLine "Movie" "in the movie - "
                 |> shrinkLine "Quote" " ? "
@@ -113,19 +115,18 @@ initQuizLine dataIndex lineNumber =
             line * 50 + 30
     in
     addStatics
-        [ style ( "border-radius", "4px" )
-        , style ( "align-items", "center" )
-        , style ( "justify-content", "center" )
-        , style ( "width", "80" )
-        , style ( "font-size", "200%" )
-        , style
-            ( "background-color"
-            , if lineNumber % 2 == 0 then
+        [ ( "border-radius", "4px" )
+        , ( "align-items", "center" )
+        , ( "justify-content", "center" )
+        , ( "width", "80" )
+        , ( "font-size", "200%" )
+        , ( "background-color"
+          , if modBy 2 lineNumber == 0 then
                 "Bisque"
 
-              else
+            else
                 "Khaki"
-            )
+          )
         ]
         (label ( 100, topOfLine lineNumber ) "no text")
 
@@ -141,14 +142,14 @@ shrinkLine propName displayString scene =
     { scene | props = insert propName prop scene.props }
 
 
-growLine : Time -> String -> String -> Scene -> Scene
+growLine : Posix -> String -> String -> Scene -> Scene
 growLine t propName displayString scene =
     let
         prop =
-            (get propName scene.props ?? emptyProp)
+            withDefault emptyProp (get propName scene.props)
                 |> setText displayString
                 |> addStatics [ ( "font-size", "200%" ) ]
-                |> addModifier (Px "width" (timeSpan t 35000) 20 800 200)
+                |> addModifier (Px "width" (timeSpan (posixToMillis t) 35000) 20 800 200)
     in
     { scene | props = insert propName prop scene.props }
 
@@ -158,23 +159,23 @@ growLine t propName displayString scene =
 -- UPDATE
 
 
-getMovieQuoteData : Int -> ( Int, Int, String, String, String, String )
+getMovieQuoteData : Int -> QuoteData
 getMovieQuoteData n =
     elementAt n quotes
-        ?? ( 85, 2002, " Andy Serkis ", " Gollum ", " The Lord of the Rings: The Two Towers ", "My precious." )
+        |> withDefault { rank = 85, year = 2002, actor = "Andy Serkis", character = "Sméagol", movie = "The Lord of the Rings: The Two Towers", line = "My precious." }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        ( rank, year, actor, role, movie, quote ) =
+        q =
             getMovieQuoteData model.index
     in
     case msg of
         Answer ->
             ( { model
                 | answer = True
-                , scene = growLine model.now "Quote" quote model.scene
+                , scene = growLine model.now "Quote" q.line model.scene
               }
             , Cmd.none
             )
@@ -183,7 +184,7 @@ update msg model =
             if model.hint1 then
                 ( { model
                     | hint2 = True
-                    , scene = growLine model.now "Movie" ("in " ++ movie) model.scene
+                    , scene = growLine model.now "Movie" ("in " ++ q.movie) model.scene
                   }
                 , Cmd.none
                 )
@@ -191,7 +192,7 @@ update msg model =
             else
                 ( { model
                     | hint1 = True
-                    , scene = growLine model.now "Role" ("portraying " ++ role) model.scene
+                    , scene = growLine model.now "Role" ("portraying " ++ q.character) model.scene
                   }
                 , Cmd.none
                 )
@@ -202,9 +203,9 @@ update msg model =
         Next ->
             let
                 next =
-                    (model.index + 1) % (length quotes + 1)
+                    modBy (length quotes + 1) (model.index + 1)
 
-                ( rank, year, actor, role, movie, quote ) =
+                qq =
                     getMovieQuoteData next
             in
             ( nextQuote next model, Cmd.none )
@@ -225,7 +226,7 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every second Tick
+    Time.every 1000 Tick
 
 
 
@@ -233,8 +234,15 @@ subscriptions model =
 -- VIEW
 
 
-view : Model -> Html Msg
+view : Model -> Document Msg
 view model =
+    { title = "Movie Quotes Quiz"
+    , body = [ view_ model ]
+    }
+
+
+view_ : Model -> Html Msg
+view_ model =
     div []
         ([ button [ onClick Hint, disabled model.hint2 ] [ text "Hint" ]
          , button [ onClick Answer, disabled (not model.hint2 || model.answer) ] [ text "Answer" ]
@@ -280,8 +288,8 @@ type Modifier
 
 -}
 type alias TimeSpan =
-    { start : Posix
-    , duration : Posix
+    { start : Int
+    , duration : Int
     }
 
 
@@ -328,8 +336,8 @@ addUnique x xs =
 
 {-| Return a Prop that displays text. Position defaults to absolute.
 -}
-button : ( Int, Int ) -> String -> Msg -> Prop
-button ( left, top ) txt msg =
+ds_button : ( Int, Int ) -> String -> Msg -> Prop
+ds_button ( left, top ) txt msg =
     { message = msg
     , modifiers =
         [ Static "position" "absolute"
@@ -375,7 +383,7 @@ label ( left, top ) txt =
 
 px : Int -> String
 px number =
-    toString number ++ "px"
+    fromInt number ++ "px"
 
 
 {-| Set the text of a Prop in a Scene, identified by its name
@@ -391,7 +399,7 @@ setTextOfProp : String -> String -> Scene -> Scene
 setTextOfProp propName txt scene =
     let
         prop =
-            get propName scene.props ?? label ( 10, 10 ) ("Prop " ++ propName ++ " not found!")
+            get propName scene.props |> withDefault (label ( 10, 10 ) ("Prop " ++ propName ++ " not found!"))
 
         props_ =
             insert propName { prop | text = txt } scene.props
@@ -399,20 +407,20 @@ setTextOfProp propName txt scene =
     { scene | props = props_ }
 
 
-timeSpan : Time -> Time -> TimeSpan
+timeSpan : Int -> Int -> TimeSpan
 timeSpan start duration =
     { start = start
     , duration = duration
     }
 
 
-updateMod : Time -> Modifier -> Modifier
+updateMod : Posix -> Modifier -> Modifier
 updateMod now v =
     case v of
         Px attr ts start end current ->
             let
                 ratio =
-                    min 1.0 ((now - ts.start) / ts.duration)
+                    min 1.0 (toFloat (posixToMillis now - ts.start) / toFloat ts.duration)
 
                 fStart =
                     toFloat start
@@ -429,47 +437,46 @@ updateMod now v =
             v
 
 
-updateProp : Time -> comparable -> Prop -> Prop
+updateProp : Posix -> comparable -> Prop -> Prop
 updateProp now k prop =
     { prop | modifiers = List.map (updateMod now) prop.modifiers }
 
 
-updateScene : Time -> Scene -> Scene
+updateScene : Posix -> Scene -> Scene
 updateScene now scene =
     { scene | props = Dict.map (updateProp now) scene.props }
 
 
-viewButton : Time -> String -> List Modifier -> Msg -> Html Msg
+viewButton : Posix -> String -> List Modifier -> Msg -> Html Msg
 viewButton now txt modifiers msg =
     Html.button [ onClick msg, disabled False ] [ text txt ]
 
 
-viewModifier : Modifier -> ( String, String )
+viewModifier : Modifier -> Html.Attribute Msg
 viewModifier v =
     case v of
         Px attr ts start end current ->
-            ( attr, px current )
+            style attr <| px current
 
-        Static k v ->
-            ( k, v )
+        Static k vv ->
+            style k vv
 
 
-viewModifiers : Time -> List Modifier -> List ( String, String )
+viewModifiers : Posix -> List Modifier -> List (Html.Attribute Msg)
 viewModifiers now mods =
     List.map viewModifier mods
 
 
-viewLabel : Time -> String -> List Modifier -> Msg -> Html Msg
+viewLabel : Posix -> String -> List Modifier -> Msg -> Html Msg
 viewLabel now txt mods msg =
     div
-        [ style (viewModifiers now mods)
-        ]
+        (viewModifiers now mods)
         [ text txt ]
 
 
 {-| Render the scene to Html
 -}
-viewScene : Time -> Scene -> List (Html Msg)
+viewScene : Posix -> Scene -> List (Html Msg)
 viewScene now scene =
     let
         f ( k, prop ) =

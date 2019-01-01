@@ -13,6 +13,12 @@ import String exposing (fromInt)
 import Time exposing (Posix, every, millisToPosix, posixToMillis)
 
 
+
+{-
+   In need of a major re-write to remove the Duck Soup concepts (Props, Modifiers)
+-}
+
+
 main : Program () Model Msg
 main =
     Browser.document
